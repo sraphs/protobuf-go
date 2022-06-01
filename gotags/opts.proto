@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+package go.tags;
+option go_package = "google.golang.org/protobuf/gotags";
+
+extend google.protobuf.FieldOptions {
+  repeated Opts opts = 9000;
+}
+
+message Opts {
+  repeated string kvs = 1;
+}

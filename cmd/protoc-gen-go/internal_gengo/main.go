@@ -20,11 +20,14 @@ import (
 	"google.golang.org/protobuf/internal/encoding/tag"
 	"google.golang.org/protobuf/internal/genid"
 	"google.golang.org/protobuf/internal/version"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/runtime/protoimpl"
 
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
+
+	"google.golang.org/protobuf/gotags"
 )
 
 // SupportedFeatures reports the set of supported protobuf language features.
@@ -415,6 +418,8 @@ func genMessageField(g *protogen.GeneratedFile, f *fileInfo, m *messageInfo, fie
 		tags = append(tags, gotrackTags...)
 	}
 
+	tags = append(tags, fieldCustomTags(field)...)
+
 	name := field.GoName
 	if field.Desc.IsWeak() {
 		name = genid.WeakFieldPrefix_goname + name
@@ -715,6 +720,36 @@ func fieldDefaultValue(g *protogen.GeneratedFile, f *fileInfo, m *messageInfo, f
 
 func fieldJSONTagValue(field *protogen.Field) string {
 	return string(field.Desc.Name()) + ",omitempty"
+}
+
+// fieldCustomTags returns the custom tags for the field.
+func fieldCustomTags(field *protogen.Field) structTags {
+	tags := structTags{}
+	opts, ok := field.Desc.Options().(*descriptorpb.FieldOptions)
+	if !ok || opts == nil {
+		return tags
+	}
+	extension := proto.GetExtension(opts, gotags.E_Opts)
+	ops, ok := extension.([]*gotags.Opts)
+	if !ok || ops == nil || len(ops) == 0 {
+		return tags
+	}
+	for _, o := range ops {
+		if o == nil {
+			continue
+		}
+
+		kvs := o.Kvs
+		if len(kvs) == 1 && kvs[0] == "" {
+			return structTags{}
+		}
+		if len(kvs) == 1 {
+			kvs = append(kvs, "")
+		}
+		tags = append(tags, [2]string{kvs[0], strings.Join(kvs[1:], ",")})
+	}
+
+	return tags
 }
 
 func genExtensions(g *protogen.GeneratedFile, f *fileInfo) {
