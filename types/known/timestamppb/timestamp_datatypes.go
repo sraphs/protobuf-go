@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	time "time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -20,13 +19,19 @@ var _ json.Unmarshaler = (*Timestamp)(nil)
 func (date *Timestamp) Scan(value interface{}) (err error) {
 	nullTime := &sql.NullTime{}
 	err = nullTime.Scan(value)
+	if err != nil || !nullTime.Valid {
+		return nil
+	}
 	*date = *New(nullTime.Time)
 	return
 }
 
 func (date *Timestamp) Value() (driver.Value, error) {
-	y, m, d := time.Time(date.AsTime()).Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.Time(date.AsTime()).Location()), nil
+	if date == nil || !date.IsValid() {
+		return nil, nil
+	}
+
+	return date.AsTime(), nil
 }
 
 func (date *Timestamp) MarshalJSON() ([]byte, error) {

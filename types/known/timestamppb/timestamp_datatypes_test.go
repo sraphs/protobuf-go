@@ -8,7 +8,6 @@ import (
 	"testing"
 	time "time"
 
-	"github.com/jinzhu/now"
 	. "google.golang.org/protobuf/datatypes"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -26,7 +25,6 @@ func TestDate(t *testing.T) {
 	}
 
 	curTime := time.Now().UTC()
-	beginningOfDay := now.New(curTime).BeginningOfDay()
 
 	user := UserWithDate{Name: "jinzhu", Date: timestamppb.New(curTime)}
 	DB.Create(&user)
@@ -36,7 +34,7 @@ func TestDate(t *testing.T) {
 		t.Fatalf("Failed to find record with date")
 	}
 
-	AssertEqual(t, result.Date, beginningOfDay)
+	AssertEqual(t, result.Date, curTime)
 }
 
 func TestJSONEncoding(t *testing.T) {
