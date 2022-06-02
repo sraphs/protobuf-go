@@ -10,12 +10,10 @@ import (
 	time "time"
 
 	"google.golang.org/protobuf/encoding/protojson"
-	"gorm.io/gorm/schema"
 )
 
 var _ sql.Scanner = (*Timestamp)(nil)
 var _ driver.Valuer = (*Timestamp)(nil)
-var _ schema.GormDataTypeInterface = (*Timestamp)(nil)
 var _ json.Marshaler = (*Timestamp)(nil)
 var _ json.Unmarshaler = (*Timestamp)(nil)
 
@@ -29,11 +27,6 @@ func (date *Timestamp) Scan(value interface{}) (err error) {
 func (date *Timestamp) Value() (driver.Value, error) {
 	y, m, d := time.Time(date.AsTime()).Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.Time(date.AsTime()).Location()), nil
-}
-
-// GormDataType gorm common data type
-func (date *Timestamp) GormDataType() string {
-	return "date"
 }
 
 func (date *Timestamp) MarshalJSON() ([]byte, error) {
