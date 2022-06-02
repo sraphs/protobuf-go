@@ -1,9 +1,15 @@
 package datatypes
 
 import (
+	"database/sql/driver"
+	"fmt"
+	"go/ast"
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -11,11 +17,13 @@ import (
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/utils"
 )
 
 var DB *gorm.DB
 
 func init() {
+	// os.Setenv("GORM_DIALECT", "mysql")
 	var err error
 	if DB, err = OpenTestConnection(); err != nil {
 		log.Printf("failed to connect database, got error %v\n", err)
@@ -28,15 +36,15 @@ func OpenTestConnection() (db *gorm.DB, err error) {
 	dialect := os.Getenv("GORM_DIALECT")
 	switch dialect {
 	case "mysql":
-		log.Println("testing mysql...")
+		fmt.Println("testing mysql...")
 		if dbDSN == "" {
-			dbDSN = "gorm:gorm@tcp(localhost:9910)/gorm?charset=utf8&parseTime=True&loc=UTC"
+			dbDSN = "root:root@tcp(localhost:3306)/test?charset=utf8&parseTime=True&loc=UTC"
 		}
 		db, err = gorm.Open(mysql.Open(dbDSN), &gorm.Config{})
 	case "postgres", "postgres_simple":
-		log.Printf("testing %v...", dialect)
+		fmt.Printf("testing %v...", dialect)
 		if dbDSN == "" {
-			dbDSN = "user=gorm password=gorm dbname=gorm port=9920 sslmode=disable TimeZone=Asia/Shanghai"
+			dbDSN = "user=root password=root dbname=test port=5432 sslmode=disable TimeZone=Asia/Shanghai"
 		}
 		if dialect == "postgres" {
 			db, err = gorm.Open(postgres.Open(dbDSN), &gorm.Config{})
@@ -49,30 +57,117 @@ func OpenTestConnection() (db *gorm.DB, err error) {
 		// USE gorm;
 		// CREATE USER gorm FROM LOGIN gorm;
 		// sp_changedbowner 'gorm';
-		log.Println("testing sqlserver...")
+		fmt.Println("testing sqlserver...")
 		if dbDSN == "" {
-			dbDSN = "sqlserver://gorm:LoremIpsum86@localhost:9930?database=gorm"
+			dbDSN = "sqlserver://root:root@localhost:9930?database=test"
 		}
 		db, err = gorm.Open(sqlserver.Open(dbDSN), &gorm.Config{})
 	default:
-		log.Println("testing sqlite3...")
+		fmt.Println("testing sqlite3...")
 		db, err = gorm.Open(sqlite.Open(filepath.Join(os.TempDir(), "gorm.db")), &gorm.Config{})
 	}
 
-	if debug := os.Getenv("DEBUG"); debug == "true" {
-		db.Logger = db.Logger.LogMode(logger.Info)
-	} else if debug == "false" {
-		db.Logger = db.Logger.LogMode(logger.Silent)
-	}
+	db.Logger = logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		Colorful:                  false,
+		IgnoreRecordNotFoundError: false,
+		LogLevel:                  logger.Silent,
+	})
 
 	return
 }
 
-func SupportedDriver(dialectors ...string) bool {
-	for _, dialect := range dialectors {
-		if DB.Dialector.Name() == dialect {
-			return true
+func AssertEqual(t *testing.T, got, expect interface{}) {
+	if !reflect.DeepEqual(got, expect) {
+		isEqual := func() {
+			if curTime, ok := got.(time.Time); ok {
+				format := "2006-01-02T15:04:05Z07:00"
+
+				if curTime.Round(time.Second).UTC().Format(format) != expect.(time.Time).Round(time.Second).UTC().Format(format) && curTime.Truncate(time.Second).UTC().Format(format) != expect.(time.Time).Truncate(time.Second).UTC().Format(format) {
+					t.Errorf("%v: expect: %v, got %v after time round", utils.FileWithLineNum(), expect.(time.Time), curTime)
+				}
+			} else if fmt.Sprint(got) != fmt.Sprint(expect) {
+				t.Errorf("%v: expect: %#v, got %#v", utils.FileWithLineNum(), expect, got)
+			}
+		}
+
+		if fmt.Sprint(got) == fmt.Sprint(expect) {
+			return
+		}
+
+		if reflect.Indirect(reflect.ValueOf(got)).IsValid() != reflect.Indirect(reflect.ValueOf(expect)).IsValid() {
+			t.Errorf("%v: expect: %+v, got %+v", utils.FileWithLineNum(), expect, got)
+			return
+		}
+
+		if valuer, ok := got.(driver.Valuer); ok {
+			got, _ = valuer.Value()
+		}
+
+		if valuer, ok := expect.(driver.Valuer); ok {
+			expect, _ = valuer.Value()
+		}
+
+		if got != nil {
+			got = reflect.Indirect(reflect.ValueOf(got)).Interface()
+		}
+
+		if expect != nil {
+			expect = reflect.Indirect(reflect.ValueOf(expect)).Interface()
+		}
+
+		if reflect.ValueOf(got).IsValid() != reflect.ValueOf(expect).IsValid() {
+			t.Errorf("%v: expect: %+v, got %+v", utils.FileWithLineNum(), expect, got)
+			return
+		}
+
+		if reflect.ValueOf(got).Kind() == reflect.Slice {
+			if reflect.ValueOf(expect).Kind() == reflect.Slice {
+				if reflect.ValueOf(got).Len() == reflect.ValueOf(expect).Len() {
+					for i := 0; i < reflect.ValueOf(got).Len(); i++ {
+						name := fmt.Sprintf(reflect.ValueOf(got).Type().Name()+" #%v", i)
+						t.Run(name, func(t *testing.T) {
+							AssertEqual(t, reflect.ValueOf(got).Index(i).Interface(), reflect.ValueOf(expect).Index(i).Interface())
+						})
+					}
+				} else {
+					name := reflect.ValueOf(got).Type().Elem().Name()
+					t.Errorf("%v expects length: %v, got %v (expects: %+v, got %+v)", name, reflect.ValueOf(expect).Len(), reflect.ValueOf(got).Len(), expect, got)
+				}
+				return
+			}
+		}
+
+		if reflect.ValueOf(got).Kind() == reflect.Struct {
+			if reflect.ValueOf(expect).Kind() == reflect.Struct {
+				if reflect.ValueOf(got).NumField() == reflect.ValueOf(expect).NumField() {
+					exported := false
+					for i := 0; i < reflect.ValueOf(got).NumField(); i++ {
+						if fieldStruct := reflect.ValueOf(got).Type().Field(i); ast.IsExported(fieldStruct.Name) {
+							exported = true
+							field := reflect.ValueOf(got).Field(i)
+							t.Run(fieldStruct.Name, func(t *testing.T) {
+								AssertEqual(t, field.Interface(), reflect.ValueOf(expect).Field(i).Interface())
+							})
+						}
+					}
+
+					if exported {
+						return
+					}
+				}
+			}
+		}
+
+		if reflect.ValueOf(got).Type().ConvertibleTo(reflect.ValueOf(expect).Type()) {
+			got = reflect.ValueOf(got).Convert(reflect.ValueOf(expect).Type()).Interface()
+			isEqual()
+		} else if reflect.ValueOf(expect).Type().ConvertibleTo(reflect.ValueOf(got).Type()) {
+			expect = reflect.ValueOf(got).Convert(reflect.ValueOf(got).Type()).Interface()
+			isEqual()
+		} else {
+			t.Errorf("%v: expect: %+v, got %+v", utils.FileWithLineNum(), expect, got)
+			return
 		}
 	}
-	return false
 }

@@ -1,6 +1,7 @@
 package durationpb
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -9,8 +10,16 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/migrator"
 	"gorm.io/gorm/schema"
 )
+
+var _ sql.Scanner = (*Duration)(nil)
+var _ driver.Valuer = (*Duration)(nil)
+var _ schema.GormDataTypeInterface = (*Duration)(nil)
+var _ migrator.GormDataTypeInterface = (*Duration)(nil)
+var _ json.Marshaler = (*Duration)(nil)
+var _ json.Unmarshaler = (*Duration)(nil)
 
 // NewDuration is a constructor for Time and returns new Time.
 func NewDuration(hour, min, sec, nsec int) *Duration {
@@ -24,27 +33,6 @@ func newDuration(hour, min, sec, nsec int) *Duration {
 			time.Duration(sec)*time.Second +
 			time.Duration(nsec)*time.Nanosecond,
 	))
-}
-
-// GormDataType returns gorm common data type. This type is used for the field's column type.
-func (*Duration) GormDataType() string {
-	return "time"
-}
-
-// GormDBDataType returns gorm DB data type based on the current using database.
-func (*Duration) GormDBDataType(db *gorm.DB, field *schema.Field) string {
-	switch db.Dialector.Name() {
-	case "mysql":
-		return "TIME"
-	case "postgres":
-		return "TIME"
-	case "sqlserver":
-		return "TIME"
-	case "sqlite":
-		return "TEXT"
-	default:
-		return ""
-	}
 }
 
 // Scan implements sql.Scanner interface and scans value into Time,
@@ -104,9 +92,30 @@ func (t *Duration) nanoseconds() int {
 	return int((time.Duration(t.AsDuration()) % time.Second).Nanoseconds())
 }
 
+// GormDataType returns gorm common data type. This type is used for the field's column type.
+func (*Duration) GormDataType() string {
+	return "time"
+}
+
+// GormDBDataType returns gorm DB data type based on the current using database.
+func (*Duration) GormDBDataType(db *gorm.DB, field *schema.Field) string {
+	switch db.Dialector.Name() {
+	case "mysql":
+		return "TIME"
+	case "postgres":
+		return "TIME"
+	case "sqlserver":
+		return "TIME"
+	case "sqlite":
+		return "TEXT"
+	default:
+		return ""
+	}
+}
+
 // MarshalJSON implements json.Marshaler to convert *Duration to json serialization.
 func (t *Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
+	return json.Marshal(t.ToTimeString())
 }
 
 // UnmarshalJSON implements json.Unmarshaler to deserialize json data.
