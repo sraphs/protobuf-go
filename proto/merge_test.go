@@ -853,6 +853,42 @@ func TestClone(t *testing.T) {
 	}
 }
 
+func TestMergeWithOverride(t *testing.T) {
+	a := &testpb.TestAllTypes{
+		OptionalInt32:   proto.Int32(1),
+		OptionalString:  proto.String("hello"),
+		RepeatedInt32:   []int32{2, 3, 4},
+		RepeatedString:  []string{"goodbye"},
+		MapStringString: map[string]string{"key": "value"},
+		OptionalNestedMessage: &testpb.TestAllTypes_NestedMessage{
+			A: proto.Int32(5),
+		},
+	}
+
+	b := &testpb.TestAllTypes{
+		RepeatedInt32: []int32{1},
+	}
+
+	proto.Merge(b, a, proto.WithOverride)
+
+	// The main impact of merging to self is that repeated fields and
+	// unknown fields are doubled.
+	want := &testpb.TestAllTypes{
+		OptionalInt32:   proto.Int32(1),
+		OptionalString:  proto.String("hello"),
+		RepeatedInt32:   []int32{2, 3, 4},
+		RepeatedString:  []string{"goodbye"},
+		MapStringString: map[string]string{"key": "value"},
+		OptionalNestedMessage: &testpb.TestAllTypes_NestedMessage{
+			A: proto.Int32(5),
+		},
+	}
+
+	if !proto.Equal(b, want) {
+		t.Errorf("Equal mismatch:\ngot  %v\nwant %v", b, want)
+	}
+}
+
 // mutateValue changes a Value, returning a new value.
 //
 // For scalar values, it returns a value different from the input.

@@ -22,7 +22,7 @@ import (
 //
 // It is semantically equivalent to unmarshaling the encoded form of src
 // into dst with the UnmarshalOptions.Merge option specified.
-func Merge(dst, src Message) {
+func Merge(dst, src Message, opts ...func(*mergeOptions)) {
 	// TODO: Should nil src be treated as semantically equivalent to a
 	// untyped, read-only, empty message? What about a nil dst?
 
@@ -33,7 +33,14 @@ func Merge(dst, src Message) {
 		}
 		panic("descriptor mismatch")
 	}
-	mergeOptions{}.mergeMessage(dstMsg, srcMsg)
+
+	config := &mergeOptions{}
+
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	config.mergeMessage(dstMsg, srcMsg)
 }
 
 // Clone returns a deep copy of m.
@@ -59,11 +66,25 @@ func Clone(m Message) Message {
 	return dst.Interface()
 }
 
+// WithOverride will make merge override non-empty dst attributes with non-empty src attributes values.
+func WithOverride(config *mergeOptions) {
+	config.Overwrite = true
+}
+
 // mergeOptions provides a namespace for merge functions, and can be
 // exported in the future if we add user-visible merge options.
-type mergeOptions struct{}
+type mergeOptions struct {
+	Overwrite bool
+}
 
 func (o mergeOptions) mergeMessage(dst, src protoreflect.Message) {
+	if o.Overwrite {
+		src.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+			dst.Clear(fd)
+			return true
+		})
+	}
+
 	methods := protoMethods(dst)
 	if methods != nil && methods.Merge != nil {
 		in := protoiface.MergeInput{
